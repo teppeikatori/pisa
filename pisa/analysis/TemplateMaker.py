@@ -126,6 +126,35 @@ class TemplateMaker:
         return (flux_maps, osc_flux_maps, event_rate_maps, event_rate_reco_maps,
                 final_event_rate)
 
+    def get_template_no_osc(self,params):
+        '''
+        Runs template making chain, but without oscillations
+        '''
+
+        flux_maps = get_flux_maps(self.flux_service,self.ebins,self.czbins)
+
+        # Create the empty nutau maps:
+        test_map = flux_maps['nue']
+
+        flavours = ['nutau','nutau_bar']
+        for flav in flavours:
+            flux_maps[flav] = {'map': np.zeros_like(test_map['map']),
+                               'ebins': np.zeros_like(test_map['ebins']),
+                               'czbins': np.zeros_like(test_map['czbins'])}
+
+        #print "  flux_maps.keys(): ",flux_maps.keys()
+        #print "  flux_maps['nutau']['map']: ",flux_maps['nutau']['map']
+        logging.info("Getting event rate true maps...")
+        event_rate_maps = get_event_rates(flux_maps,self.aeff_service, **params)
+
+        logging.info("Getting event rate reco maps...")
+        event_rate_reco_maps = get_reco_maps(event_rate_maps,self.reco_service,
+                                             **params)
+
+        logging.info("Getting pid maps...")
+        final_event_rate = get_pid_maps(event_rate_reco_maps,self.pid_service)
+
+        return final_event_rate
 
 if __name__ == '__main__':
 
@@ -140,6 +169,8 @@ if __name__ == '__main__':
                         action='store_true', help="select the normal hierarchy")
     hselect.add_argument('--inverted', dest='normal', default = False,
                         action='store_false', help="select the inverted hierarchy")
+    parser.add_argument('--save_stages',action="store_true",default=False,
+                        help="Save all stages of templates.")
     parser.add_argument('-v','--verbose',action='count',default=None,
                         help='set verbosity level.')
     parser.add_argument('-o', '--outfile', dest='outfile', metavar='FILE', type=str,
@@ -166,7 +197,7 @@ if __name__ == '__main__':
 
     #Now get the actual template
     profile.info("start template calculation")
-    template = template_maker.get_template(get_values(params))
+    template = template_maker.get_template(get_values(params),return_stages=args.save_stages)
     profile.info("stop template calculation")
 
     #Write out

@@ -37,7 +37,7 @@ def calc_steps(params, settings):
     for key in params:
         #ignore if we already have those
         if isinstance(params[key]['steps'],np.ndarray): continue
-        
+
         #calculate the steps
         lower, upper = params[key]['range']
         nsteps = params[key]['steps']
@@ -45,7 +45,7 @@ def calc_steps(params, settings):
 
     #report for all
     for name, steps in [ (k,v['steps']) for k,v in params.items()]:
-       logging.debug("Using %u steps for %s from %.5f to %.5f" % 
+       logging.debug("Using %u steps for %s from %.5f to %.5f" %
                           (len(steps), name, steps[0], steps[-1]))
 
 
@@ -90,7 +90,7 @@ def find_max_grid(fmap,template_maker,params,grid_settings,save_steps=True,
         #Get a dict with all parameter values at this position
         #including the fixed parameters
         template_params = dict(list(pos) + get_values(fixed_params).items())
- 
+
         # Now get true template
         profile.info('start template calculation')
         true_template = template_maker.get_template(template_params)
@@ -101,12 +101,12 @@ def find_max_grid(fmap,template_maker,params,grid_settings,save_steps=True,
         llh = -get_binwise_llh(fmap,true_fmap)
 
         #get sorted vals to match wiht priors
-        vals = [ v for v,k in sorted(pos) ]   
+        vals = [ v for v,k in sorted(pos) ]
         llh -= sum([ get_prior_llh(vals,sigma,value) for (vals,(sigma,value)) in zip(vals,priors)])
 
         # Save all values to steps and report
         steps['llh'].append(llh)
-        physics.debug("LLH is %.2f at: "%llh) 
+        physics.debug("LLH is %.2f at: "%llh)
         for key, val in pos:
             steps[key].append(val)
             physics.debug(" %20s = %6.4f" %(key, val))

@@ -19,6 +19,39 @@ from pisa.analysis.stats.LLHStatistics import get_binwise_llh
 from pisa.analysis.stats.Maps import flatten_map
 
 
+def find_llh_no_osc(fmap,template_maker,params):
+    '''
+    Finds the LLH for the data fitting the no oscillations case
+    '''
+
+    # WARNING: FOR NOW no nuisance parameters. Just calculate the NULL
+    # hypothesis likelihood.
+    fixed_params = get_fixed_params(select_hierarchy(params,True))
+    free_params = get_free_params(select_hierarchy(params,True))
+    all_params = dict(fixed_params.items() + free_params.items())
+    
+    no_osc_template = template_maker.get_template_no_osc(get_values(all_params))
+    no_osc_fmap = flatten_map(no_osc_template)
+    llh = get_binwise_llh(fmap,no_osc_fmap)
+
+    return llh
+
+def find_llh_mc_true(fmap,template_maker,params,normal_hierarchy=True):
+    '''
+    Finds the LLH for the data using the mc true parameters
+    '''
+
+    # WARNING: FOR NOW no nuisance parameters. Just calculate the mc
+    # true LLH, for 2 primary oscillation parameters.
+    fixed_params = get_fixed_params(select_hierarchy(params,normal_hierarchy))
+    free_params = get_free_params(select_hierarchy(params,normal_hierarchy))
+    all_params = dict(fixed_params.items() + free_params.items())
+
+    mc_true_template = template_maker.get_template(get_values(all_params))
+    mc_true_fmap = flatten_map(mc_true_template)
+
+    return get_binwise_llh(fmap,mc_true_fmap)
+
 def find_max_llh_bfgs(fmap,template_maker,params,bfgs_settings,save_steps=False,
                       normal_hierarchy=True):
     '''
