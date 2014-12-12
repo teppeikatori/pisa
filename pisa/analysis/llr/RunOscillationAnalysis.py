@@ -3,15 +3,16 @@
 # RunOscillationAnalysis.py
 #
 # Runs the oscillation analysis, very similar to the LLROptimizer
-# analysis, but different enough that it will be it's own script
+# NMH analysis, but different enough that it will be it's own script
 #
 # author: Tim Arlen - tca3@psu.edu
 #
-# date:   02-July-2014
+# date:   11-December-2014
 #
 
 import numpy as np
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+import sys
 
 from pisa.utils.log import logging, profile, physics, set_verbosity
 from pisa.utils.jsons import from_json,to_json
@@ -35,15 +36,22 @@ parser.add_argument('-n','--ntrials',type=int, default = 1,
 parser.add_argument('-s','--save-steps',action='store_true',default=False,
                     dest='save_steps',
                     help="Save all steps the optimizer takes.")
+parser.add_argument('-c','--chan',type=str,default='both',
+                    help='which channel to use in the fit. For now, can be one of [trck,cscd,both]')
 parser.add_argument('--save_pseudo_data',action='store_true',default=False,
                     help='Saves pseudo data in output file.')
-parser.add_argument('--fit_no_osc',action='store_true',default=False,
-                    help='Fits null hypothesis (no oscillations) for the given pseudo data set.')
+parser.add_argument('--fit_null',action='store_true',default=False,
+                    help='Fits null hypothesis (no oscillations) for the given pseudo data set, to allow computation of significance of numu appearance.')
+parser.add_argument('--fit_mc_true',action='store_true',default=False,
+                    help='Fits mc true values for given pseudo data set to find distribution.')
 parser.add_argument('-o','--outfile',type=str,default='llh_data.json',metavar='JSONFILE',
                     help="Output filename.")
 parser.add_argument('-v', '--verbose', action='count', default=None,
                     help='set verbosity level')
 args = parser.parse_args()
+
+cmd_str = ""
+for arg in sys.argv: cmd_str+=arg+" "
 
 set_verbosity(args.verbose)
 
@@ -73,45 +81,57 @@ for itrial in xrange(1,args.ntrials+1):
 
 
     # //////////////////////////////////////////////////////////////////////
-    # For each trial, generate two pseudo-data experiemnts (one for each
-    # hierarchy), and for each find the best matching template in each of the
-    # hierarchy hypothesis.
+    # For each trial, generate pseudo-data experiments. If we are fitting
+    # for the NULL hypothesis (no oscillations) then generate data sets
+    # for 'no_osc', 'nmh', and 'imh'. Otherwise, will only generate pseudo
+    # data for 'nmh' and 'imh', since oscillations are assumed.
+    #
+    # Pseudo data sets are then fit to templates assuming these alternative
+    # hypotheses.
     # //////////////////////////////////////////////////////////////////////
-    results = {}
-    for data_tag, data_normal in [('data_NMH',True),('data_IMH',False)]:
 
+    data_types = [('data_NMH',True),('data_IMH',False)]
+    if args.fit_null: data_types.append(('data_NULL',None))
+
+    results = {}
+    for data_tag, data_normal in data_types:
         results[data_tag] = {}
-        # 0) get a random seed and store with the data
-        #results[data_tag]['seed'] = get_seed()
-        #print "  seed used: ",results[data_tag]['seed']
-        # 1) get a pseudo data fmap from fiducial model (best fit vals of params).
-        fmap = get_pseudo_data_fmap(template_maker,
-                                    get_values(select_hierarchy(params,
-                                                                normal_hierarchy=data_normal)))
-                                    #seed=results[data_tag]['seed'])
+
+        if data_normal is None:
+            logging.info("Defining pseudo data from template assuming NO OSCILLATIONS...")
+            fmap = get_pseudo_data_fmap(template_maker,get_values(params),chan=args.chan,no_osc=True)
+        else:
+            logging.info("Defining pseudo data from template assuming oscillations...")
+            params_hierarchy = select_hierarchy(params,normal_hierarchy=data_normal)
+            fmap = get_pseudo_data_fmap(template_maker,get_values(params_hierarchy),chan=args.chan)
 
         if args.save_pseudo_data: results[data_tag]['pseudo_data'] = fmap
 
-        if args.fit_no_osc:
-            logging.info("Finding llh for no oscillations...")
-            llh_no_osc = find_llh_no_osc(fmap,template_maker,params)
-            results[data_tag]['fit_no_osc'] = {}
-            results[data_tag]['fit_no_osc']['llh'] = llh_no_osc
+        if args.fit_mc_true:
+            # Find LLH of MC True-NEED TO IMPLEMENT NUISANCE PARAM FIT HERE
+            logging.info("Finding llh for true injected params...")
+            llh_mc_true = find_llh_mc_true(fmap,template_maker,params,normal_hierarchy=data_normal)
+            results[data_tag]['mc_true'] = llh_mc_true
 
-        # Fit to true osc params:
-        logging.info("Finding llh for true injected params...")
-        llh_mc_true = find_llh_mc_true(fmap,template_maker,params,normal_hierarchy=data_normal)
-        results[data_tag]['mc_true'] = {}
-        results[data_tag]['mc_true']['llh'] = llh_mc_true
-
-        # 2) find max llh (and best fit free params) from matching pseudo data
-        #    to templates.
-        for hypo_tag, hypo_normal in [('hypo_NMH',True),('hypo_IMH',False)]:
+        hypo_types = [('hypo_NMH',True),('hypo_IMH',False)]
+        if args.fit_null: hypo_types.append(('hypo_NULL',None))
+        for hypo_tag, hypo_normal in hypo_types:
 
             physics.info("Finding best fit for %s under %s assumption"%(data_tag,hypo_tag))
             profile.info("start optimizer")
+            # HOW do we handle 'NULL' case here? Well, I think we can
+            # give normal_hierarchy=None, and if that happens,
+            # find_max_llh_bfgs will use
+            # template_maker.get_template_no_osc() instead??
+            if hypo_normal == None:
+                no_osc = True
+                hypo_normal = True
+            else:
+                no_osc = False
             llh_data = find_max_llh_bfgs(fmap,template_maker,params,
-                                        minimizer_settings,args.save_steps,normal_hierarchy=hypo_normal)
+                                         minimizer_settings,args.save_steps,
+                                         normal_hierarchy=hypo_normal,no_osc=no_osc,
+                                         chan=args.chan)
             profile.info("stop optimizer")
 
             #Store the LLH data
@@ -125,6 +145,7 @@ for itrial in xrange(1,args.ntrials+1):
 #Assemble output dict
 output = {'trials' : trials,
           'template_settings' : template_settings,
-          'minimizer_settings' : minimizer_settings}
+          'minimizer_settings' : minimizer_settings,
+          'command': cmd_str}
 #And write to file
 to_json(output,args.outfile)

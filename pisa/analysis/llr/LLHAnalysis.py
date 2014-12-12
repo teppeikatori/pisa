@@ -14,7 +14,7 @@ import numpy as np
 import scipy.optimize as opt
 
 from pisa.utils.log import logging, physics, profile
-from pisa.utils.params import get_values, select_hierarchy, get_fixed_params, get_free_params, get_prior_llh, get_param_values, get_param_scales, get_param_bounds, get_param_priors
+from pisa.utils.params import get_values, select_hierarchy, get_fixed_params, get_free_params, get_prior_llh, get_param_values, get_param_scales, get_param_bounds, get_param_priors,fix_osc_params
 from pisa.analysis.stats.LLHStatistics import get_binwise_llh
 from pisa.analysis.stats.Maps import flatten_map
 
@@ -29,7 +29,7 @@ def find_llh_no_osc(fmap,template_maker,params):
     fixed_params = get_fixed_params(select_hierarchy(params,True))
     free_params = get_free_params(select_hierarchy(params,True))
     all_params = dict(fixed_params.items() + free_params.items())
-    
+
     no_osc_template = template_maker.get_template_no_osc(get_values(all_params))
     no_osc_fmap = flatten_map(no_osc_template)
     llh = get_binwise_llh(fmap,no_osc_fmap)
@@ -41,11 +41,18 @@ def find_llh_mc_true(fmap,template_maker,params,normal_hierarchy=True):
     Finds the LLH for the data using the mc true parameters
     '''
 
+    # WARNING: FINISH THESE!!!
+
     # WARNING: FOR NOW no nuisance parameters. Just calculate the mc
     # true LLH, for 2 primary oscillation parameters.
-    fixed_params = get_fixed_params(select_hierarchy(params,normal_hierarchy))
-    free_params = get_free_params(select_hierarchy(params,normal_hierarchy))
-    all_params = dict(fixed_params.items() + free_params.items())
+    if normal_hierarchy is None:
+        fixed_params = get_fixed_params(params)
+        free_params = get_free_params(params)
+        all_params = params
+    else:
+        fixed_params = get_fixed_params(select_hierarchy(params,normal_hierarchy))
+        free_params = get_free_params(select_hierarchy(params,normal_hierarchy))
+        all_params = dict(fixed_params.items() + free_params.items())
 
     mc_true_template = template_maker.get_template(get_values(all_params))
     mc_true_fmap = flatten_map(mc_true_template)
@@ -53,12 +60,12 @@ def find_llh_mc_true(fmap,template_maker,params,normal_hierarchy=True):
     return get_binwise_llh(fmap,mc_true_fmap)
 
 def find_max_llh_bfgs(fmap,template_maker,params,bfgs_settings,save_steps=False,
-                      normal_hierarchy=True):
+                      normal_hierarchy=True,no_osc=False,chan='both'):
     '''
-    Finds the template (and free systematic params) that maximize
-    likelihood that the data came from the chosen template of true
-    params, using the limited memory BFGS algorithm subject to bounds
-    (l_bfgs_b).
+    Finds the template (and free systematic params, or "nuisance"
+    params) that maximize likelihood that the data came from the
+    chosen template of true params, using the limited memory BFGS
+    algorithm subject to bounds (l_bfgs_b).
 
     returns a dictionary of llh data and best fit params, in the format:
       {'llh': [...],
@@ -73,8 +80,18 @@ def find_max_llh_bfgs(fmap,template_maker,params,bfgs_settings,save_steps=False,
 
     # Get params dict which will be optimized (free_params) and which
     # won't be (fixed_params) but are still needed for get_template()
-    fixed_params = get_fixed_params(select_hierarchy(params,normal_hierarchy))
-    free_params = get_free_params(select_hierarchy(params,normal_hierarchy))
+    if no_osc:
+        logging.info("Finding max LLH bfgs for NO OSCILLATIONS")
+        logging.warn("SETTING ALL OSC PARAMS TO FIXED!")
+        params_no_osc = fix_osc_params(params)
+
+        fixed_params = get_fixed_params(select_hierarchy(params_no_osc,True))
+        free_params = get_free_params(select_hierarchy(params_no_osc,True))
+        # This will tell template_maker to get no_osc templates in llh_bfgs:
+        fixed_params['theta23']['value'] = 0.0
+    else:
+        fixed_params = get_fixed_params(select_hierarchy(params,normal_hierarchy))
+        free_params = get_free_params(select_hierarchy(params,normal_hierarchy))
 
     init_vals = get_param_values(free_params)
     scales = get_param_scales(free_params)
@@ -89,7 +106,11 @@ def find_max_llh_bfgs(fmap,template_maker,params,bfgs_settings,save_steps=False,
     opt_steps_dict = {key:[] for key in names}
     opt_steps_dict['llh'] = []
 
-    const_args = (names,scales,fmap,fixed_params,template_maker,opt_steps_dict,priors)
+    #const_args = (names,scales,fmap,fixed_params,template_maker,opt_steps_dict,priors)
+    const_arg_dict = {'names':names,'scales':scales,'fmap':fmap,'fixed_params':fixed_params,
+                       'template_maker':template_maker,'opt_steps_dict':opt_steps_dict,
+                       'priors':priors,'chan':chan}
+    const_args = (const_arg_dict,)
 
     physics.info('%d parameters to be optimized'%len(free_params))
     for name,init,(down,up),(prior, best) in zip(names, init_vals, bounds, priors):
@@ -142,11 +163,12 @@ def llh_bfgs(opt_vals,*args):
     where 'params' are the actual VALUES to be varied, and must
     correspond to the limits in 'bounds', and 'args' are arguments
     which are not varied and optimized, but needed by the
-    get_template() function here. Thus, we pass the arguments to this
-    function as follows:
+    get_template() function and in our likelihood calculation. Thus,
+    we pass the arguments to this function as follows:
 
     --opt_vals: [param1,param2,...,paramN] - systematics varied in the optimization.
-    --args: [names,scales,fmap,fixed_params,template_maker,opt_steps_dict,priors]
+    --args: 1 element tuple, containing a dictionary with keys:
+      [names,scales,fmap,fixed_params,template_maker,opt_steps_dict,priors,chan]
       where
         names: are the dict keys corresponding to param1, param2,...
         scales: the scales to be applied before passing to get_template
@@ -161,38 +183,45 @@ def llh_bfgs(opt_vals,*args):
           for each trial of the optimization process.
         priors: gaussian priors corresponding to opt_vals list.
           Format: [(prior1,best1),(prior2,best2),...,(priorN,bestN)]
+        chan: channel for template, either 'trck', 'cscd', or 'both'
     '''
 
-
-    names,scales,fmap,fixed_params,template_maker,opt_steps_dict,priors = args
+    # Necessary, because the function that the bfgs algorithm takes
+    # MUST be a tuple. So we make the first element of the tuple the
+    # arguments dictionary.
+    arg_dict = args[0]
 
     # free parameters being "optimized" by minimizer re-scaled to their true values.
-    unscaled_opt_vals = [opt_vals[i]/scales[i] for i in xrange(len(opt_vals))]
+    unscaled_opt_vals = [opt_vals[i]/arg_dict['scales'][i] for i in xrange(len(opt_vals))]
 
-    unscaled_free_params = { names[i]: val for i,val in enumerate(unscaled_opt_vals) }
-    template_params = dict(unscaled_free_params.items() + get_values(fixed_params).items())
+    unscaled_free_params = { arg_dict['names'][i]: val for i,val in enumerate(unscaled_opt_vals) }
+    template_params = dict(unscaled_free_params.items() + get_values(arg_dict['fixed_params']).items())
 
     # Now get true template, and compute LLH
     profile.info('start template calculation')
-    true_template = template_maker.get_template(template_params)
+    if template_params['theta23'] == 0.0:
+        logging.info("Zero theta23, so generating no oscillations template...")
+        true_template = arg_dict['template_maker'].get_template_no_osc(template_params)
+    else:
+        true_template = arg_dict['template_maker'].get_template(template_params)
     profile.info('stop template calculation')
-    true_fmap = flatten_map(true_template)
+    true_fmap = flatten_map(true_template,chan=arg_dict['chan'])
 
     # NOTE: The minus sign is present on both of these next two lines
     # to reflect the fact that the optimizer finds a minimum rather
     # than maximum.
-    llh = -get_binwise_llh(fmap,true_fmap)
+    llh = -get_binwise_llh(arg_dict['fmap'],true_fmap)
     llh -= sum([ get_prior_llh(opt_val,sigma,value)
-                 for (opt_val,(sigma,value)) in zip(unscaled_opt_vals,priors)])
+                 for (opt_val,(sigma,value)) in zip(unscaled_opt_vals,arg_dict['priors'])])
 
     # Save all optimizer-tested values to opt_steps_dict, to see
     # optimizer history later
-    for key in names:
-        opt_steps_dict[key].append(template_params[key])
-    opt_steps_dict['llh'].append(llh)
+    for key in arg_dict['names']:
+        arg_dict['opt_steps_dict'][key].append(template_params[key])
+    arg_dict['opt_steps_dict']['llh'].append(llh)
 
     physics.debug("LLH is %.2f at: "%llh)
-    for name, val in zip(names, opt_vals):
+    for name, val in zip(arg_dict['names'], opt_vals):
         physics.debug(" %20s = %6.4f" %(name,val))
 
     return llh

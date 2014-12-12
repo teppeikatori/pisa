@@ -69,7 +69,8 @@ def get_free_params(params):
 
 def get_prior_llh(value,sigma,fiducial):
     '''
-    Returns the log(prior) for a gaussian prior probability, unless it
+    Returns the log(pr
+    ior) for a gaussian prior probability, unless it
     has not been defined, in which case 0.0 is returned.. Ignores the
     constant term proportional to log(sigma_prior).
 
@@ -102,3 +103,17 @@ def get_param_priors(params):
     Returns a list of [(prior,value),...] for each param
     '''
     return [ [val['prior'],val['value']] for key,val in sorted(params.items()) ]
+
+def fix_osc_params(params):
+    '''
+    Returns dict identical to params dict but with all oscillation
+    parameters set to "fixed"=True
+    '''
+    new_params = {}
+    # or initialize with new copy by dict(params)
+    osc_params = ['deltam31','deltam31_nh','deltam31_ih','deltam21',
+                  'theta23','theta13','theta12','deltacp']
+    for key,value in params.items():
+        new_params[key] = value.copy()
+        if key in osc_params: new_params[key]['fixed'] = True
+    return new_params

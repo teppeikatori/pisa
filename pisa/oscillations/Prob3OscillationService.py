@@ -61,11 +61,12 @@ class Prob3OscillationService(OscillationServiceBase):
 
         logging.info("Defining osc_prob_dict from BargerPropagator...")
         profile.info("start oscillation calculation")
-        # Set to false, since we are using sin^2(2 theta) variables
-        kSquared = False
-        sin2th12Sq = np.sin(2.0*theta12)**2
-        sin2th13Sq = np.sin(2.0*theta13)**2
-        sin2th23Sq = np.sin(2.0*theta23)**2
+        # Set to true, since we want to be able to test both octants,
+        # and will use sin^2(theta) NOT sin^2(2*theta) variable.
+        kSquared = True
+        sin2th12Sq = np.sin(theta12)**2
+        sin2th13Sq = np.sin(theta13)**2
+        sin2th23Sq = np.sin(theta23)**2
 
         total_bins = int(len(ecen)*len(czcen))
         mod = total_bins/50
