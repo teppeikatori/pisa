@@ -104,6 +104,14 @@ def get_param_priors(params):
     '''
     return [ [val['prior'],val['value']] for key,val in sorted(params.items()) ]
 
+def get_atm_params(params):
+    '''
+    Returns dictionary of just the atmospheric parameters
+    '''
+    atm_params = ['deltam31','deltam31_nh','deltam31_ih',
+                  'theta23']
+    return { key: value for key, value in params.items() if key in atm_params }
+
 def fix_osc_params(params):
     '''
     Returns dict identical to params dict but with all oscillation
@@ -116,4 +124,18 @@ def fix_osc_params(params):
     for key,value in params.items():
         new_params[key] = value.copy()
         if key in osc_params: new_params[key]['fixed'] = True
+    return new_params
+
+def fix_atm_params(params):
+    '''
+    Returns dict identical to params dict but with all atmospheric
+    oscillation parameters fixed.
+    '''
+    new_params = {}
+    # or initialize with new copy by dict(params)
+    atm_params = ['deltam31','deltam31_nh','deltam31_ih',
+                  'theta23']
+    for key,value in params.items():
+        new_params[key] = value.copy()
+        if key in atm_params: new_params[key]['fixed'] = True
     return new_params

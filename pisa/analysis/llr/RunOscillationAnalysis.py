@@ -43,7 +43,7 @@ parser.add_argument('--save_pseudo_data',action='store_true',default=False,
 parser.add_argument('--fit_null',action='store_true',default=False,
                     help='Fits null hypothesis (no oscillations) for the given pseudo data set, to allow computation of significance of numu appearance.')
 parser.add_argument('--fit_mc_true',action='store_true',default=False,
-                    help='Fits mc true values for given pseudo data set to find distribution.')
+                    help='Fits mc true values for given pseudo data set to find chi2-like distribution.')
 parser.add_argument('-o','--outfile',type=str,default='llh_data.json',metavar='JSONFILE',
                     help="Output filename.")
 parser.add_argument('-v', '--verbose', action='count', default=None,
