@@ -67,9 +67,7 @@ def get_osc_flux(flux_maps,osc_service=None,deltam21=None,deltam31=None,
 	for mID in ['','_bar']: # 'matter' ID
             nue_flux = flux_maps['nue'+mID]['map']
             numu_flux = flux_maps['numu'+mID]['map']
-            scale = 1
-            if(to_flav=='nutau'):
-                scale = nutau_norm
+            scale = nutau_norm if to_flav == 'nutau' else 1.0
             oscflux = {'ebins':ebins,
                        'czbins':czbins,
                        'map':(scale*nue_flux*osc_prob_maps['nue'+mID+'_maps'][to_flav+mID] +
